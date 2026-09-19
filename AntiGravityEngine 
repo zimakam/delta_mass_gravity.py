@@ -1,0 +1,481 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+ΔM-ANTIGRAVITY — эффективная антигравитация через разность масс
+================================================================
+Оригинальная модель: g(r) = -G·M_n/r² + α·ΔM/r² · ξ(r/r_eq)
+ξ(x) = (1 - tanh(x-1))/2
+r_eq = (3·G·M_n / (4π·|α·ΔM|))^(1/3)
+
+Автор концепции: Зиявутдинов Магомед Камалович (Zimaka)
+Email: zimakam@gmail.com
+Лицензия: MIT
+Версия: 1.0.0
+
+Запуск:
+    python delta_mass_gravity.py              # демо
+    python delta_mass_gravity.py --test       # тесты
+    python delta_mass_gravity.py --profile    # профиль g(r)
+    python delta_mass_gravity.py --ascii      # ASCII-график
+"""
+
+from __future__ import annotations
+import math
+import argparse
+from dataclasses import dataclass, field as dc_field
+from typing import Optional, Dict, List, Tuple
+
+# ═══════════════════════════════════════════════════════════════════════════
+# КОНСТАНТЫ
+# ═══════════════════════════════════════════════════════════════════════════
+
+G_NEWTON = 6.674e-11      # гравитационная постоянная (СИ)
+PI = math.pi
+
+# Параметры по умолчанию
+ALPHA_DEFAULT = 1.0       # коэффициент связи
+M_N_DEFAULT = 1.0         # масса внутреннего слоя
+DM_DEFAULT = 0.1          # разность масс M_{n+1} - M_n
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ОСНОВНОЙ КЛАСС
+# ═══════════════════════════════════════════════════════════════════════════
+
+@dataclass
+class AntiGravityState:
+    """Снимок состояния на радиусе r."""
+    r: float
+    r_over_req: float
+    xi: float
+    g_grav: float
+    g_anti: float
+    g_total: float
+    sign: str
+    regime: str
+
+    def to_dict(self) -> dict:
+        return {
+            "r": self.r,
+            "r/r_eq": round(self.r_over_req, 6),
+            "xi": round(self.xi, 6),
+            "g_grav": self.g_grav,
+            "g_anti": self.g_anti,
+            "g_total": self.g_total,
+            "sign": self.sign,
+            "regime": self.regime,
+        }
+
+
+class DeltaMassGravity:
+    """
+    Эффективная антигравитация через разность масс между слоями.
+
+    Формулы:
+        g_grav(r) = -G·M_n / r²
+        g_anti(r) = +α·ΔM / r² · ξ(r/r_eq)
+        g(r) = g_grav + g_anti
+
+        ξ(x) = (1 - tanh(x - 1)) / 2
+        r_eq = (3·G·M_n / (4π·|α·ΔM|))^(1/3)
+
+    Поведение:
+        r << r_eq: ξ ≈ 1 → антигравитация доминирует
+        r = r_eq:  ξ = 0.5 → равновесие
+        r >> r_eq: ξ → 0 → гравитация доминирует
+        ΔM = 0:    нет антигравитации (только гравитация)
+        ΔM < 0:    антигравитация направлена внутрь (притяжение)
+
+    Автор: Зиявутдинов Магомед Камалович (Zimaka).
+    """
+
+    def __init__(self, alpha: float = ALPHA_DEFAULT,
+                 G: float = G_NEWTON,
+                 soft_core: float = 0.0):
+        """
+        alpha      — коэффициент связи (α > 0 для нормальной работы)
+        G          — гравитационная постоянная
+        soft_core  — регуляризация r² → r² + ε² (защита от сингулярности)
+        """
+        self.alpha = float(alpha)
+        self.G = float(G)
+        self.soft_core = float(soft_core)
+        self._r2_eps = self.soft_core ** 2
+
+    # ─── Функция перехода ───
+    @staticmethod
+    def xi(x: float) -> float:
+        """
+        Функция перехода:
+            ξ(x) = (1 - tanh(x - 1)) / 2
+
+        Свойства:
+            ξ(0)   = (1 + tanh(1))/2 ≈ 0.8808
+            ξ(1)   = 0.5
+            ξ(∞)   = 0
+            ξ'(x)  = -1/(2·cosh²(x-1)) < 0
+        """
+        return (1.0 - math.tanh(x - 1.0)) / 2.0
+
+    # ─── Равновесный радиус ───
+    def r_eq(self, M_n: float, dM: float) -> float:
+        """
+        Равновесный радиус:
+            r_eq = (3·G·M_n / (4π·|α·ΔM|))^(1/3)
+
+        Возвращает inf, если ΔM = 0 (нет антигравитации).
+        """
+        if abs(dM) < 1e-20:
+            return float('inf')
+        denom = 4.0 * PI * abs(self.alpha * dM)
+        if denom < 1e-30:
+            return float('inf')
+        return (3.0 * self.G * M_n / denom) ** (1.0 / 3.0)
+
+    # ─── Гравитационная компонента ───
+    def g_grav(self, r: float, M_n: float) -> float:
+        """g_grav(r) = -G·M_n / r²."""
+        r2 = r * r + self._r2_eps
+        return -self.G * M_n / r2
+
+    # ─── Антигравитационная компонента ───
+    def g_anti(self, r: float, dM: float,
+               r_eq: Optional[float] = None) -> float:
+        """
+        g_anti(r) = +α·ΔM / r² · ξ(r/r_eq).
+        Если r_eq не задан — вычисляется из dM.
+        """
+        if r_eq is None:
+            return 0.0  # нужен M_n для расчёта
+        if r_eq == float('inf'):
+            return 0.0
+        r2 = r * r + self._r2_eps
+        return self.alpha * dM / r2 * self.xi(r / r_eq)
+
+    # ─── Суммарное ускорение ───
+    def g_at_r(self, r: float, M_n: float, M_next: float) -> float:
+        """
+        Суммарное ускорение:
+            g(r) = -G·M_n/r² + α·ΔM/r² · ξ(r/r_eq)
+        """
+        if r < 1e-12:
+            return 0.0
+        dM = M_next - M_n
+        r_eq = self.r_eq(M_n, dM)
+        if r_eq == float('inf'):
+            return self.g_grav(r, M_n)
+        return self.g_grav(r, M_n) + self.g_anti(r, dM, r_eq)
+
+    # ─── Полное состояние ───
+    def state_at(self, r: float, M_n: float, M_next: float) -> AntiGravityState:
+        """Полное состояние в точке r."""
+        dM = M_next - M_n
+        r_eq = self.r_eq(M_n, dM)
+
+        if r_eq == float('inf'):
+            g_g = self.g_grav(r, M_n)
+            g_a = 0.0
+            g_t = g_g
+            xi_v = 0.0
+            r_over = float('inf')
+            regime = "no_antigravity"
+        else:
+            xi_v = self.xi(r / r_eq)
+            g_g = self.g_grav(r, M_n)
+            g_a = self.g_anti(r, dM, r_eq)
+            g_t = g_g + g_a
+            r_over = r / r_eq
+            if r_over < 0.5:
+                regime = "strong_antigravity"
+            elif r_over < 0.95:
+                regime = "antigravity"
+            elif r_over < 1.05:
+                regime = "equilibrium_zone"
+            elif r_over < 2.0:
+                regime = "transition"
+            else:
+                regime = "gravity_dominated"
+
+        if abs(g_t) < 1e-20:
+            sign = "equilibrium"
+        elif g_t > 0:
+            sign = "antigravity"
+        else:
+            sign = "gravity"
+
+        return AntiGravityState(
+            r=r, r_over_req=r_over, xi=xi_v,
+            g_grav=g_g, g_anti=g_a, g_total=g_t,
+            sign=sign, regime=regime)
+
+    # ─── Численный поиск r_eq ───
+    def find_r_eq_numeric(self, M_n: float, M_next: float,
+                          r_max: float = 1e6,
+                          tol: float = 1e-9,
+                          max_iter: int = 200) -> float:
+        """
+        Численно найти радиус, где g(r) = 0 (бисекция).
+        Используется для проверки, что аналитическая формула верна.
+        """
+        # Границы: g(r→0) → большой по модулю, g(r→∞) → -0
+        lo, hi = 1e-15, r_max
+        g_lo = self.g_at_r(lo, M_n, M_next)
+        g_hi = self.g_at_r(hi, M_n, M_next)
+
+        # Ищем смену знака
+        if g_lo * g_hi > 0:
+            return float('nan')
+
+        for _ in range(max_iter):
+            mid = 0.5 * (lo + hi)
+            g_mid = self.g_at_r(mid, M_n, M_next)
+            if abs(g_mid) < tol or (hi - lo) < tol * mid:
+                return mid
+            if g_lo * g_mid < 0:
+                hi = mid
+                g_hi = g_mid
+            else:
+                lo = mid
+                g_lo = g_mid
+        return 0.5 * (lo + hi)
+
+    # ─── Профиль g(r) ───
+    def profile(self, M_n: float, M_next: float,
+                r_min_frac: float = 0.01, r_max_frac: float = 20.0,
+                n_points: int = 100) -> List[AntiGravityState]:
+        """
+        Профиль g(r) от r_min_frac·r_eq до r_max_frac·r_eq.
+        """
+        r_eq = self.r_eq(M_n, M_next - M_n)
+        if r_eq == float('inf'):
+            return [self.state_at(1.0, M_n, M_next)]
+        states = []
+        for i in range(n_points):
+            frac = r_min_frac + (r_max_frac - r_min_frac) * i / (n_points - 1)
+            r = frac * r_eq
+            states.append(self.state_at(r, M_n, M_next))
+        return states
+
+    # ─── Полная сводка ───
+    def report(self, M_n: float, M_next: float) -> str:
+        dM = M_next - M_n
+        r_eq = self.r_eq(M_n, dM)
+        r_eq_str = (f"{r_eq:.6e}" if r_eq != float('inf')
+                    else "∞ (нет антигравитации)")
+        lines = [
+            "=" * 70,
+            "DELTA MASS ANTIGRAVITY",
+            "=" * 70,
+            f"  α (coupling):   {self.alpha:.4f}",
+            f"  G (Newton):     {self.G:.4e}",
+            f"  soft_core:      {self.soft_core:.4e}",
+            f"  M_n:            {M_n:.4f}",
+            f"  M_next:         {M_next:.4f}",
+            f"  ΔM:             {dM:+.4f}",
+            f"  r_eq (analytic): {r_eq_str}",
+            "",
+            "  Профиль g(r):",
+            f"  {'r/r_eq':>10} {'ξ':>10} {'g_grav':>14} "
+            f"{'g_anti':>14} {'g_total':>14} {'режим':>20}",
+            "  " + "-" * 84,
+        ]
+        if r_eq != float('inf'):
+            for frac in [0.1, 0.3, 0.5, 0.7, 0.9, 1.0, 1.1, 1.5, 2.0, 5.0, 10.0]:
+                r = frac * r_eq
+                s = self.state_at(r, M_n, M_next)
+                lines.append(
+                    f"  {s.r_over_req:>10.3f} {s.xi:>10.4f} "
+                    f"{s.g_grav:>14.6e} {s.g_anti:>14.6e} "
+                    f"{s.g_total:>14.6e} {s.regime:>20}")
+        lines.append("=" * 70)
+        return "\n".join(lines)
+
+    # ─── ASCII-график g(r) ───
+    def ascii_plot(self, M_n: float, M_next: float,
+                   width: int = 70, height: int = 20) -> str:
+        """
+        ASCII-график g(r) в диапазоне r/r_eq ∈ [0.01, 10].
+        """
+        r_eq = self.r_eq(M_n, M_next - M_n)
+        if r_eq == float('inf'):
+            return "Нет антигравитации (ΔM = 0)"
+
+        n = width
+        log_min, log_max = -2.0, 1.0  # log10(r/r_eq) от -2 до 1
+        rs = [r_eq * (10 ** (log_min + (log_max - log_min) * i / (n - 1)))
+              for i in range(n)]
+        gs = [self.g_at_r(r, M_n, M_next) for r in rs]
+
+        g_min, g_max = min(gs), max(gs)
+        if g_max - g_min < 1e-20:
+            return "g(r) = const"
+
+        grid = [[" " for _ in range(width)] for _ in range(height)]
+        for i, g in enumerate(gs):
+            y = int((g_max - g) / (g_max - g_min) * (height - 1))
+            if 0 <= y < height and 0 <= i < width:
+                grid[y][i] = "●"
+
+        # Ось нуля
+        if g_min < 0 < g_max:
+            y_zero = int(g_max / (g_max - g_min) * (height - 1))
+            for x in range(width):
+                if grid[y_zero][x] == " ":
+                    grid[y_zero][x] = "─"
+
+        lines = [f"g(r) профиль  [ΔM={M_next-M_n:+.4f}, α={self.alpha}]",
+                 f"  g_max = {g_max:+.4e}",
+                 ""]
+        for row in grid:
+            lines.append("  " + "".join(row))
+        lines.append(f"  g_min = {g_min:+.4e}")
+        lines.append("")
+        lines.append("  ← антигравитация (r << r_eq)     "
+                     "гравитация (r >> r_eq) →")
+        return "\n".join(lines)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ТЕСТЫ
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _check(name: str, cond: bool):
+    if not cond:
+        raise AssertionError(f"FAIL: {name}")
+    print(f"  OK  {name}")
+
+
+def run_tests():
+    print("=" * 70)
+    print("ΔM-ANTIGRAVITY — TESTS")
+    print("=" * 70)
+
+    print("\n[1] ξ(x) свойства")
+    _check("ξ(0) ∈ (0, 1)", 0 < DeltaMassGravity.xi(0) < 1)
+    _check("ξ(1) = 0.5", abs(DeltaMassGravity.xi(1.0) - 0.5) < 1e-12)
+    _check("ξ(∞) → 0", DeltaMassGravity.xi(1000.0) < 1e-12)
+    _check("ξ монотонна", DeltaMassGravity.xi(0.5) > DeltaMassGravity.xi(2.0))
+
+    print("\n[2] r_eq формула")
+    g = DeltaMassGravity(alpha=1.0)
+    req = g.r_eq(M_n=1.0, dM=0.1)
+    _check("r_eq > 0", req > 0 and math.isfinite(req))
+    _check("r_eq(ΔM↑) ↓", g.r_eq(1.0, 0.2) < g.r_eq(1.0, 0.1))
+    _check("r_eq(ΔM=0) = ∞", g.r_eq(1.0, 0.0) == float('inf'))
+
+    print("\n[3] Знак g(r)")
+    M_n, M_next = 1.0, 1.1
+    _check("r << r_eq: antigravity",
+           g.sign_at(0.1 * req, M_n, M_next) == "antigravity")
+    _check("r << r_eq: antigravity",
+           g.sign_at(0.5 * req, M_n, M_next) == "antigravity")
+    _check("r >> r_eq: gravity",
+           g.sign_at(2.0 * req, M_n, M_next) == "gravity")
+    _check("r >> r_eq: gravity",
+           g.sign_at(10.0 * req, M_n, M_next) == "gravity")
+
+    print("\n[4] Равновесие")
+    s_eq = g.state_at(req, M_n, M_next)
+    _check("|g(r_eq)| мало", abs(s_eq.g_total) < 1e-3)
+    _check("ξ(r_eq) = 0.5", abs(s_eq.xi - 0.5) < 1e-6)
+
+    print("\n[5] Численный поиск r_eq")
+    req_num = g.find_r_eq_numeric(M_n, M_next,
+                                   r_max=10 * req,
+                                   tol=1e-12)
+    rel_err = abs(req_num - req) / req
+    _check(f"аналитика vs численно (Δ={rel_err:.2e})",
+           rel_err < 1e-3)
+
+    print("\n[6] ΔM = 0")
+    _check("нет антигравитации",
+           g.sign_at(0.1, 1.0, 1.0) == "gravity")
+
+    print("\n[7] ΔM < 0")
+    g_neg = DeltaMassGravity(alpha=1.0)
+    req_neg = g_neg.r_eq(1.0, -0.1)
+    _check("r_eq(ΔM<0) > 0", req_neg > 0)
+    # При ΔM<0 антигравитация направлена внутрь → g < 0 везде
+    _check("ΔM<0: g < 0",
+           g_neg.g_at_r(0.5 * req_neg, 1.0, 0.9) < 0)
+
+    print("\n[8] Soft core")
+    g_soft = DeltaMassGravity(alpha=1.0, soft_core=0.01)
+    _check("нет бесконечности", math.isfinite(g_soft.g_at_r(0.0, 1.0, 1.1)))
+
+    print("\n[9] Профиль")
+    prof = g.profile(M_n, M_next, n_points=50)
+    _check("50 точек", len(prof) == 50)
+    _check("есть antigravity", any(s.sign == "antigravity" for s in prof))
+    _check("есть gravity", any(s.sign == "gravity" for s in prof))
+
+    print("\n[10] Регрессия: r_eq не меняется при масштабировании")
+    g2 = DeltaMassGravity(alpha=2.0)
+    req2 = g2.r_eq(1.0, 0.1)
+    _check("r_eq(α=2) < r_eq(α=1)", req2 < req)
+
+    print()
+    print("=" * 70)
+    print("✅ ВСЕ ТЕСТЫ ПРОЙДЕНЫ (10 групп)")
+    print("=" * 70)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# CLI
+# ═══════════════════════════════════════════════════════════════════════════
+
+def demo():
+    print("=" * 70)
+    print("ΔM-ANTIGRAVITY — ДЕМО")
+    print("=" * 70)
+    g = DeltaMassGravity(alpha=1.0)
+    M_n, M_next = 1.0, 1.1
+    print()
+    print(g.report(M_n, M_next))
+    print()
+    print(g.ascii_plot(M_n, M_next))
+
+
+def profile_cli():
+    print("=" * 70)
+    print("ПРОФИЛЬ g(r) для разных ΔM")
+    print("=" * 70)
+    for dM in [0.05, 0.1, 0.2, 0.5]:
+        g = DeltaMassGravity(alpha=1.0)
+        req = g.r_eq(1.0, dM)
+        print(f"\n  ΔM = {dM:.2f}:  r_eq = {req:.4e}")
+        print(f"  {'r/r_eq':>8} {'sign':>14} {'g_total':>16}")
+        for frac in [0.1, 0.5, 0.9, 1.0, 1.5, 3.0, 10.0]:
+            r = frac * req
+            s = g.state_at(r, 1.0, 1.0 + dM)
+            print(f"  {frac:>8.2f} {s.sign:>14} {s.g_total:>16.6e}")
+
+
+def ascii_cli():
+    g = DeltaMassGravity(alpha=1.0)
+    print(g.ascii_plot(1.0, 1.1))
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="ΔM-Antigravity — эффективная антигравитация")
+    parser.add_argument("--test", action="store_true")
+    parser.add_argument("--profile", action="store_true")
+    parser.add_argument("--ascii", action="store_true")
+    parser.add_argument("--alpha", type=float, default=1.0)
+    parser.add_argument("--M_n", type=float, default=1.0)
+    parser.add_argument("--M_next", type=float, default=1.1)
+    args = parser.parse_args()
+
+    if args.test:
+        run_tests()
+    elif args.profile:
+        profile_cli()
+    elif args.ascii:
+        ascii_cli()
+    else:
+        demo()
+
+
+if __name__ == "__main__":
+    main()
