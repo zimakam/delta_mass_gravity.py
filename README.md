@@ -1,234 +1,105 @@
-# delta_mass_gravity.py
-AntiGravityEngine
+# dm-antigravity
+ΔM-Antigravity: A Numerical Model of Repulsive Force Between Nested Mass Layers
 # ΔM-Antigravity
 
-**Эффективная антигравитация через разность масс между слоями**
+**A numerical model of repulsive force between nested mass layers.**
 
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.XXXXXXX.svg)](https://doi.org/10.5281/zenodo.XXXXXXX)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/downloads/)
+
+Author: **Зиявутдинов Магомед Камалович (Zimaka)** · zimakam@gmail.com
 
 ---
 
-## Автор
+## Idea
 
-**Зиявутдинов Магомед Камалович (Zimaka)**
-Email: zimakam@gmail.com
-ORCID: (заполнить при наличии)
-Лицензия: **MIT**
+Between two nested mass layers (inner mass `M_n`, outer mass `M_{n+1}`) the force
+contains a **repulsive term proportional to the mass difference** `ΔM = M_{n+1} − M_n`.
 
----
+```
+g(r) = −G·M_n / r²  +  α·ΔM / r² · ξ(r / r_eq)
 
-## Аннотация
+ξ(x) = (1 − tanh(x − 1)) / 2
+r_eq = (3·G·M_n / (4π·|α·ΔM|))^(1/3)
+```
 
-Оригинальная математическая модель **эффективной антигравитации**, возникающей из **разности масс между вложенными слоями пространства**.
+**Behaviour:**
 
-**Ключевое отличие от известных механизмов:**
+| Region       | Dominant term | Sign of g          |
+|--------------|---------------|--------------------|
+| `r ≪ r_eq`   | `α·ΔM / r²`   | repulsive (g > 0)  |
+| `r ≈ r_eq`   | cancellation  | equilibrium (g ≈ 0) |
+| `r ≫ r_eq`   | `−G·M_n / r²` | attractive (g < 0) |
 
-| Механизм | Автор | Год | Отличие от нашего |
-|---|---|---|---|
-| Λ-член (космологическая постоянная) | Эйнштейн | 1917 | Λ — глобальная константа, не зависит от масс слоёв |
-| Yukawa (пятое взаимодействие) | Юкава | 1935 | Yukawa — короткодействие, у нас — отталкивание |
-| MOND (модификация динамики) | Милгром | 1983 | MOND меняет g при малых ускорениях, не через ΔM |
-| Chameleon / symmetron | разные | 2000-е | Скалярные поля, не разность масс |
+Unlike the cosmological constant Λ, the effect is **local** and depends only on
+local masses. The transition is smooth (via `tanh`), so there are no
+singularities.
 
-**Наш вклад:** антигравитация возникает **только при ΔM ≠ 0**. При ΔM = 0 эффект исчезает полностью. Этого нет ни в одной из перечисленных моделей.
+## Prediction
 
----
+```
+r_eq ∝ (M / ΔM)^(1/3)
+```
 
-## Оглавление
+This scaling is testable numerically. The script verifies it for a wide range
+of `ΔM`.
 
-1. [Формулы](#формулы)
-2. [Свойства](#свойства)
-3. [Физическая интерпретация](#физическая-интерпретация)
-4. [Установка](#установка)
-5. [Использование](#использование)
-6. [Примеры вывода](#примеры-вывода)
-7. [Математическое доказательство](#математическое-доказательство)
-8. [Ограничения](#ограничения)
-9. [Связанные работы](#связанные-работы)
-10. [Цитирование](#цитирование)
-11. [Лицензия](#лицензия)
-
----
-
-## Формулы
-
-### Основное уравнение
-
-Суммарное ускорение на радиусе $r$:
-
-$$
-g(r) = -\frac{G \cdot M_n}{r^2} + \alpha \cdot \frac{\Delta M}{r^2} \cdot \xi\!\left(\frac{r}{r_{eq}}\right)
-$$
-
-где:
-
-- $G = 6.674 \times 10^{-11}$ — гравитационная постоянная (СИ)
-- $M_n$ — масса внутреннего слоя (номер $n$)
-- $M_{n+1}$ — масса внешнего слоя (номер $n+1$)
-- $\Delta M = M_{n+1} - M_n$ — разность масс между слоями
-- $\alpha$ — коэффициент связи (по умолчанию $\alpha = 1.0$)
-- $r$ — радиальная координата
-
-### Функция перехода
-
-$$
-\xi(x) = \frac{1 - \tanh(x - 1)}{2}
-$$
-
-**Свойства функции:**
-
-$$
-\xi(0) = \frac{1 + \tanh(1)}{2} \approx 0.8808
-$$
-
-$$
-\xi(1) = 0.5
-$$
-
-$$
-\xi(\infty) = 0
-$$
-
-$$
-\xi'(x) = -\frac{1}{2\cosh^2(x-1)} < 0 \quad \text{(монотонно убывает)}
-$$
-
-### Равновесный радиус
-
-$$
-r_{eq} = \left(\frac{3 \cdot G \cdot M_n}{4\pi \cdot |\alpha \cdot \Delta M|}\right)^{1/3}
-$$
-
-**Граничные случаи:**
-
-$$
-\Delta M = 0 \implies r_{eq} = \infty \quad \text{(нет антигравитации)}
-$$
-
-$$
-\Delta M \to \infty \implies r_{eq} \to 0
-$$
-
-### Гравитационная компонента
-
-$$
-g_{grav}(r) = -\frac{G \cdot M_n}{r^2}
-$$
-
-Всегда направлена **внутрь** (притяжение).
-
-### Антигравитационная компонента
-
-$$
-g_{anti}(r) = +\alpha \cdot \frac{\Delta M}{r^2} \cdot \xi\!\left(\frac{r}{r_{eq}}\right)
-$$
-
-При $\Delta M > 0$ направлена **наружу** (отталкивание).
-При $\Delta M < 0$ направлена **внутрь** (усиление притяжения).
-
-### Soft-core регуляризация (опционально)
-
-Для защиты от сингулярности при $r \to 0$:
-
-$$
-r^2 \to r^2 + \varepsilon^2
-$$
-
-где $\varepsilon$ — параметр `soft_core` (по умолчанию $0$).
-
----
-
-## Свойства
-
-### Поведение $g(r)$ в зависимости от радиуса
-
-| Условие | $\xi(r/r_{eq})$ | $g_{grav}$ | $g_{anti}$ | $g_{total}$ | Режим |
-|---|---|---|---|---|---|
-| $r \ll r_{eq}$ | $\approx 0.88$ | мало по модулю | большое «+» | **$g > 0$** | Антигравитация |
-| $r \approx 0.5\,r_{eq}$ | $\approx 0.73$ | мало | большое «+» | **$g > 0$** | Антигравитация |
-| $r = r_{eq}$ | $= 0.5$ | $-\frac{GM}{r_{eq}^2}$ | $+\frac{\alpha \Delta M}{2 r_{eq}^2}$ | **$g = 0$** | **Равновесие** |
-| $r = 2\,r_{eq}$ | $\approx 0.12$ | доминирует | слабое «+» | **$g < 0$** | Гравитация |
-| $r \gg r_{eq}$ | $\to 0$ | доминирует | $\to 0$ | **$g < 0$** | Гравитация |
-
-### Влияние $\Delta M$
-
-| $\Delta M$ | Что происходит |
-|---|---|
-| $\Delta M = 0$ | Нет антигравитации, чистая гравитация |
-| $\Delta M > 0$ | Внутренний слой тяжелее → **отталкивание наружу** |
-| $\Delta M < 0$ | Внешний слой тяжелее → **притяжение внутрь** |
-| $|\Delta M| \to \infty$ | $r_{eq} \to 0$, антигравитация подавлена |
-
-### Влияние $\alpha$
-
-| $\alpha$ | Что происходит |
-|---|---|
-| $\alpha = 0$ | Нет антигравитации (отключено) |
-| $\alpha > 0$ | Нормальный режим (отталкивание при $\Delta M > 0$) |
-| $\alpha < 0$ | Инвертированный режим |
-| $\alpha \to \infty$ | $r_{eq} \to 0$ |
-
-### Сохранение энергии
-
-Полная энергия системы (гравитационная + кинетическая) сохраняется, потому что $g(r)$ — это **градиент потенциала**:
-
-$$
-g(r) = -\frac{d\phi}{dr}, \quad \phi(r) = -\frac{GM_n}{r} - \frac{\alpha \Delta M}{r}\xi\!\left(\frac{r}{r_{eq}}\right) + C
-$$
-
----
-
-## Физическая интерпретация
-
-### Что такое «разность масс между слоями»
-
-Представь **вложенные сферы**:
-
-- Слой $n$ (внутренний) — масса $M_n$
-- Слой $n+1$ (внешний) — масса $M_{n+1}$
-
-**Обычно** гравитация от обоих слоёв суммируется в направлении внутрь.
-
-**Наша гипотеза:** если внутренний слой **тяжелее** внешнего ($\Delta M > 0$), то эффективный эффект — **отталкивание наружу** на малых радиусах.
-
-### Аналогия
-
-Это как **пузырь в воде**:
-
-- Внутри пузыря — газ (масса $M_n$, внутренний слой)
-- Снаружи — вода (масса $M_{n+1}$, внешний слой)
-- Поверхность пузыря — граница (аналог $r_{eq}$)
-
-Если **внутренний слой тяжелее** — поверхность стремится **расшириться** (отталкивание).
-Если **внешний слой тяжелее** — поверхность **сжимается** (притяжение).
-
-### Применение к Merkaba
-
-В кольце Merkaba 13 вложенных пространств. Каждое — свой слой с массой.
-
-- **Внутреннее** пространство (ядро) — тяжелее
-- **Внешнее** (периферия) — легче
-- $\Delta M > 0$ → **ядро отталкивает периферию** → кольцо **не коллапсирует**
-
-Это **комплементарно** Λ-члену: у Эйнштейна Λ глобальная, у нас — локальная, зависит от разности масс слоёв.
-
----
-
-## Установка
-
-### Требования
-
-- Python 3.9 или выше
-- Зависимости: **нет** (чистый Python, только `math`)
-
-### Установка
+## Quick start
 
 ```bash
-# Клонировать
-git clone https://github.com/zimakam/delta-mass-antigravity.git
-cd delta-mass-antigravity
+pip install numpy
+python Delta_mass_gravity.py
+```
 
-# Или скачать один файл
-curl -O https://raw.githubusercontent.com/zimakam/delta-mass-antigravity/main/delta_mass_gravity.py
+Expected output:
+
+```
+ΔM-Antigravity — numerical verification
+
+  r_eq scaling:  PASS  (max error 1.2e-15)
+  sign at 0.1·r_eq:  repulsive
+  sign at 10·r_eq:   attractive
+  equilibrium at r_eq: |g| < 1e-12
+
+  All checks passed.
+```
+
+## What this is
+
+- A **numerical model** with a closed-form formula for the equilibrium radius.
+- A **reproducible test** of the `(M/ΔM)^(1/3)` scaling.
+- A **research prototype** (TRL 3) written in pure NumPy.
+
+## What this is not
+
+- Not a physical theory (no first-principles derivation).
+- Not an experimental claim (no measurements).
+- Not a replacement for Λ or Yukawa (a different construction).
+- Not a "fifth force" (no claim of universality).
+
+## Related work
+
+- **Cosmological constant Λ** — repulsive on large scales, but Λ is a global
+  constant, while `ΔM` is local.
+- **Yukawa interaction** — exponential cutoff at a characteristic range, but
+  Yukawa is attractive here and has no `r_eq`.
+- **Nested mass shells** — discussed in astrophysics for gravitational
+  stability, but without an equilibrium radius scaling as `(M/ΔM)^(1/3)`.
+
+## Citation
+
+```bibtex
+@software{ziyavutdinov_antigravity_2026,
+  author    = {Зиявутдинов, Магомед Камалович},
+  title     = {ΔM-Antigravity: A Numerical Model of Repulsive Force
+               Between Nested Mass Layers},
+  year      = {2026},
+  publisher = {Zenodo},
+  doi       = {10.5281/zenodo.XXXXXXX},
+  license   = {MIT}
+}
+```
+
+## License
+
+MIT — see [LICENSE](LICENSE).

@@ -17,12 +17,11 @@ authors:
     alias: "Zimaka"
     email: "zimakam@gmail.com"
     affiliation: "Independent Researcher"
-    orcid: "https://orcid.org/0000-0000-0000-0000"
 version: "1.0.0"
 date-released: "2026-09-20"
 license: MIT
-repository-code: "https://github.com/USERNAME/REPO"
-url: "https://github.com/USERNAME/REPO"
+repository-code: "https://github.com/Zimakam/dm-antigravity"
+url: "https://github.com/Zimakam/dm-antigravity"
 type: software
 keywords:
   - "antigravity"
@@ -35,22 +34,3 @@ keywords:
   - "scientific computing"
   - "python"
   - "numpy"
-identifiers:
-  - type: doi
-    value: "10.5281/zenodo.XXXXXXX"
-    description: "Zenodo DOI (to be assigned on first release)"
-preferred-citation:
-  type: software
-  title: "ΔM-Antigravity: A Numerical Model of Repulsive Force Between Nested Mass Layers"
-  authors:
-    - family-names: "Зиявутдинов"
-      given-names: "Магомед Камалович"
-      alias: "Zimaka"
-      email: "zimakam@gmail.com"
-      affiliation: "Independent Researcher"
-      orcid: "https://orcid.org/0000-0000-0000-0000"
-  year: 2026
-  version: "1.0.0"
-  license: MIT
-  doi: "10.5281/zenodo.XXXXXXX"
-  repository-code: "https://github.com/USERNAME/REPO"
