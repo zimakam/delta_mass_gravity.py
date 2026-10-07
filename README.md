@@ -1,3 +1,16 @@
+# ⚠️ This repo is a mirror
+
+The maintained version lives at: **https://github.com/zimakam/dm-antigravity**
+
+This repo `delta_mass_gravity.py` is kept as a **named mirror** for
+the standalone script. Both are now functionally identical.
+
+For the full package (tests, CLI, φ-layers, engine, JSON IO):
+→ see **zimakam/dm-antigravity**
+
+
+---
+
 # dm-antigravity
 ΔM-Antigravity: A Numerical Model of Repulsive Force Between Nested Mass Layers
 # ΔM-Antigravity
